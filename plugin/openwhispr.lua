@@ -28,7 +28,7 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
   end,
 })
 
-local subcommands = { "toggle", "start", "stop", "cancel" }
+local subcommands = { "toggle", "start", "stop", "cancel", "history" }
 
 vim.api.nvim_create_user_command("OpenWhispr", function(cmd)
   local sub = cmd.fargs[1] or "toggle"
@@ -38,19 +38,29 @@ vim.api.nvim_create_user_command("OpenWhispr", function(cmd)
   end
   local range = cmd.range > 0 and { line1 = cmd.line1, line2 = cmd.line2 } or nil
   local ow = require("openwhispr")
-  if sub == "toggle" or sub == "start" then
+  if sub == "history" then
+    if cmd.fargs[2] and cmd.fargs[2] ~= "all" then
+      vim.notify("openwhispr: usage: :OpenWhispr history [all]", vim.log.levels.ERROR)
+      return
+    end
+    ow.history(cmd.fargs[2] == "all")
+  elseif sub == "toggle" or sub == "start" then
     ow[sub](range)
   else
     ow[sub]()
   end
 end, {
-  nargs = "?",
+  nargs = "*",
   range = true,
-  desc = "Dictation: toggle, start, stop, or cancel",
-  complete = function(arglead)
+  desc = "Dictation: toggle, start, stop, cancel, or history",
+  complete = function(arglead, cmdline)
+    local words = vim.split(vim.trim(cmdline), "%s+")
+    local nargs = #words - 1 + (arglead == "" and 1 or 0)
+    local choices = nargs <= 1 and subcommands
+      or (nargs == 2 and words[2] == "history" and { "all" } or {})
     return vim.tbl_filter(function(s)
       return s:find(arglead, 1, true) == 1
-    end, subcommands)
+    end, choices)
   end,
 })
 

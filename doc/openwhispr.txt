@@ -8,8 +8,9 @@ CONTENTS                                                  *openwhispr-contents*
   3. Usage .................................. |openwhispr-usage|
   4. Commands and mappings .................. |openwhispr-commands|
   5. Configuration .......................... |openwhispr-configuration|
-  6. Lua API ................................ |openwhispr-api|
-  7. Privacy ................................ |openwhispr-privacy|
+  6. Transcript history ..................... |openwhispr-history|
+  7. Lua API ................................ |openwhispr-api|
+  8. Privacy ................................ |openwhispr-privacy|
 
 ==============================================================================
 1. INTRODUCTION                                       *openwhispr-introduction*
@@ -111,6 +112,11 @@ was closed in the meantime, the text goes to the unnamed register.
 
 :OpenWhispr cancel      Stop recording and discard all dictation in
                         progress.
+
+:OpenWhispr history [all]
+                        Review the transcript history: the entries not
+                        reviewed yet, or all entries. See
+                        |openwhispr-history|.
 
                                                   *<Plug>(openwhispr-toggle)*
                                                    *<Plug>(openwhispr-start)*
@@ -241,8 +247,53 @@ indicator                                              *openwhispr-indicator*
     "eol" (end of line), or false. Highlight groups:
     `OpenWhisprRecording`, `OpenWhisprProcessing`.
 
+history.enabled                                  *openwhispr-history.enabled*
+    Save every dictation (see |openwhispr-history|). Default: false.
+
+history.dir                                          *openwhispr-history.dir*
+    Directory of the history. Default: nil, for
+    `stdpath("data") .. "/openwhispr"`.
+
+history.audio                                      *openwhispr-history.audio*
+    Keep the recordings. Default: true.
+
+history.player                                    *openwhispr-history.player*
+    List: the command that plays a recording; the file is appended.
+    Default: `{ "afplay" }`.
+
 ==============================================================================
-6. LUA API                                                     *openwhispr-api*
+6. TRANSCRIPT HISTORY                                      *openwhispr-history*
+
+With `history.enabled`, every dictation is saved: the recording, the raw
+transcript from the speech recognizer, the cleaned text (or the cleanup
+error), the filetype, the transcription backend, and the time. The text
+around the cursor is not saved. The purpose is a record of what the speech
+recognizer gets wrong, as material for improving recognition later (for
+example, by fine-tuning the model on your recordings).
+
+The history directory (`history.dir`) contains `history.jsonl`, one JSON
+object per dictation, and the recordings as `audio/{id}.wav`, about 2 MB per
+minute of speech. Fields: `id`, `time`, `duration`, `backend`, `filetype`,
+`raw`, `cleaned` or `cleanup_error`, `audio`, and, once reviewed,
+`verbatim`.
+
+`:OpenWhispr history` opens a buffer with the entries not reviewed yet: >
+
+    ## 20261111-173601-488  7.55 s  python
+    raw:      Return the a, the normalized vector. ...
+    cleaned:  Return the unnormalized vector and the norm.
+    verbatim: Return the a, the normalized vector. ...
+<
+Correct each `verbatim:` line to what was actually said, including fillers
+and self-corrections: it describes the audio, not the text for the file.
+<CR> plays the recording of the entry under the cursor (`history.player`).
+|:w| stores the verbatim lines and marks every entry still in the buffer as
+reviewed; delete an entry's lines to leave it for later. An empty verbatim
+line marks a recording as unusable. `:OpenWhispr history all` lists the
+reviewed entries too.
+
+==============================================================================
+7. LUA API                                                     *openwhispr-api*
 
 All functions are in `require("openwhispr")`.
 
@@ -251,6 +302,7 @@ start()         Start dictation (uses the visual selection in visual mode).
 stop()          Stop recording and process the audio.
 cancel()        Discard all dictation in progress.
 is_recording()  Whether a recording is in progress.
+history([all])  Open the transcript history for review.
 status()        Short state string for a statusline, `""` when idle.
 
                                                          *OpenWhisprStatus*
@@ -258,9 +310,10 @@ A |User| autocommand with the pattern `OpenWhisprStatus` fires on every
 state change; `data.status` holds the value of `status()`.
 
 ==============================================================================
-7. PRIVACY                                                 *openwhispr-privacy*
+8. PRIVACY                                                 *openwhispr-privacy*
 
-Audio is processed locally. The cleanup step sends the transcript, the file
+Audio is processed locally and deleted after transcription, unless
+`history.enabled` keeps it. The cleanup step sends the transcript, the file
 name and filetype, and the text around the insertion point (see
 |openwhispr-context.lines|) to the Anthropic API. Set `cleanup.enabled =
 false` to keep everything local.

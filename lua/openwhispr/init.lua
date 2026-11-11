@@ -9,6 +9,7 @@ local transcribe = require("openwhispr.transcribe")
 local context = require("openwhispr.context")
 local cleanup = require("openwhispr.cleanup")
 local insert = require("openwhispr.insert")
+local history = require("openwhispr.history")
 
 local M = {}
 
@@ -144,7 +145,7 @@ local function map_keys(s)
         if prev.buffer ~= 1 then
           prev = nil
         end
-        vim.keymap.set(mode, lhs, fn, { buf = s.buf, nowait = true, desc = desc })
+        vim.keymap.set(mode, lhs, fn, { buffer = s.buf, nowait = true, desc = desc })
         table.insert(s.keymaps, { mode = mode, lhs = lhs, prev = prev })
       end
     end
@@ -160,7 +161,7 @@ local function unmap_keys(s)
   end
   api.nvim_buf_call(s.buf, function()
     for _, m in ipairs(maps) do
-      pcall(vim.keymap.del, m.mode, m.lhs, { buf = s.buf })
+      pcall(vim.keymap.del, m.mode, m.lhs, { buffer = s.buf })
       if m.prev then
         pcall(vim.fn.mapset, m.mode, false, m.prev)
       end
@@ -245,13 +246,35 @@ local function vocabulary(s)
   return words
 end
 
+---Add the dictation to the history (if enabled). This moves the recording
+---into the history directory.
+local function save_history(s, raw, cleaned, err)
+  if not config.options.history.enabled then
+    return
+  end
+  local ok, res, herr = pcall(history.add, {
+    id = s.history_id,
+    time = s.time,
+    backend = s.backend,
+    filetype = s.filetype,
+    raw = raw,
+    cleaned = cleaned,
+    cleanup_error = err,
+  }, s.audio)
+  if not ok or not res then
+    notify("could not save the history entry: " .. tostring(herr or res), levels.WARN)
+  end
+end
+
 local function process(s, transcript)
   local opts = config.options
   if not opts.cleanup.enabled then
+    save_history(s, transcript)
     return deliver(s, transcript)
   end
   local r = target_range(s)
   if not r then
+    save_history(s, transcript)
     return deliver(s, transcript)
   end
   update(s, "cleaning")
@@ -264,6 +287,7 @@ local function process(s, transcript)
     if s.cancelled then
       return finish(s)
     end
+    save_history(s, transcript, not err and text or nil, err)
     if err then
       notify("cleanup failed, inserting the raw transcript: " .. err, levels.WARN)
       return deliver(s, transcript)
@@ -314,6 +338,7 @@ local function on_record_exit(s, res)
       notify("no speech detected", levels.WARN)
       return finish(s)
     end
+    s.backend = backend
     if backend ~= "openwhispr" and config.options.transcription.openwhispr then
       notify("OpenWhispr app not reachable; transcribed with " .. backend)
     end
@@ -403,6 +428,9 @@ function M.start(range)
     cursor = api.nvim_win_get_cursor(0),
     tick = vim.b[buf].changedtick,
     started = vim.uv.now(),
+    time = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+    history_id = history.new_id(),
+    filetype = vim.bo[buf].filetype,
   }
   local proc, err = recorder.start(opts, s.audio, function(res)
     on_record_exit(s, res)
@@ -479,6 +507,13 @@ function M.cancel()
     notify("dictation cancelled")
   end
   emit()
+end
+
+---Open the transcript history for review: the unreviewed entries, or all
+---entries with `all`.
+---@param all? boolean
+function M.history(all)
+  history.open(all)
 end
 
 ---Whether a recording is in progress.

@@ -111,6 +111,7 @@ Commands:
 | `:OpenWhispr start` | start recording |
 | `:OpenWhispr stop` | stop recording and process it |
 | `:OpenWhispr cancel` | stop recording and discard everything in progress |
+| `:OpenWhispr history` | review the unreviewed entries of the transcript history (`:OpenWhispr history all` for every entry) |
 
 With a range (`:'<,'>OpenWhispr`), the dictated text replaces the selected text.
 
@@ -170,10 +171,33 @@ require("openwhispr").setup({
   smart_spacing = true, -- add spaces between inserted text and adjacent words
   wrap = true, -- wrap long inserted lines at 'textwidth' (as if typed)
   indicator = "inline", -- "inline", "eol", or false
+  history = {
+    enabled = false, -- keep recordings and transcripts (see "Transcript history")
+    dir = nil, -- nil for stdpath("data") .. "/openwhispr"
+    audio = true, -- keep the recordings (WAV)
+    player = { "afplay" }, -- plays a recording in the review buffer
+  },
 })
 ```
 
 `filetype_hints` maps a filetype to a description of the file for the model; your entries are merged with the defaults. The defaults cover `markdown` (also `quarto`, `rmd`, `pandoc`), `tex`, `plaintex`, `julia`, `python`, `gitcommit`, `mail`, and `text`. The Markdown hint asks for valid GitHub-flavored Markdown, with code in backticks and math as `$...$` / `$$...$$`. It also applies wherever treesitter reports Markdown embedded at the cursor, for example in a docstring.
+
+## Transcript history
+
+With `history.enabled = true`, every dictation is saved: the recording, the raw transcript from the speech recognizer, the cleaned text (or the cleanup error), the filetype, the transcription backend, and the time. The surrounding buffer text is not saved. The goal is a record of what the speech recognizer gets wrong, to improve recognition of your vocabulary later, for example by fine-tuning the model on your own recordings.
+
+The history lives in `~/.local/share/nvim/openwhispr/` (`history.dir`): `history.jsonl` with one JSON object per dictation, and the recordings as `audio/<id>.wav`, about 2 MB per minute of speech.
+
+`:OpenWhispr history` opens the entries you have not reviewed yet:
+
+```
+## 20261111-173601-488  7.55 s  python
+raw:      Return the a, the normalized vector. Actually, no. Return the unnormalized vector and the norm.
+cleaned:  Return the unnormalized vector and the norm.
+verbatim: Return the a, the normalized vector. Actually, no. Return the unnormalized vector and the norm.
+```
+
+Edit the `verbatim` line to what you actually said, keeping fillers and self-corrections: it describes the audio, not the text you want in the file. `<CR>` on an entry plays its recording. `:w` stores the verbatim lines and marks every entry in the buffer as reviewed; delete an entry's lines first to leave it for later. An empty verbatim line marks a recording as unusable. `:OpenWhispr history all` shows reviewed entries as well.
 
 ## What the model sees
 
@@ -183,7 +207,7 @@ Line wrapping is done by the plugin, not the model: inserted lines longer than `
 
 ## Privacy
 
-Audio stays on your machine. The cleanup step sends the transcript, the file name and filetype, and up to `context.lines_before` + `context.lines_after` lines around the cursor (at most `context.max_chars` characters) to the Anthropic API. Set `cleanup.enabled = false` to keep everything local.
+Audio stays on your machine; by default it is deleted after transcription, unless `history.enabled` keeps it. The cleanup step sends the transcript, the file name and filetype, and up to `context.lines_before` + `context.lines_after` lines around the cursor (at most `context.max_chars` characters) to the Anthropic API. Set `cleanup.enabled = false` to keep everything local.
 
 ## License
 

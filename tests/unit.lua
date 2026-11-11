@@ -216,5 +216,120 @@ do
   vim.notify = notify
 end
 
+-- Transcript history.
+do
+  local history = require("openwhispr.history")
+  local ow = require("openwhispr")
+  local dir = vim.fn.tempname()
+  local notify = vim.notify
+  vim.notify = function() end
+
+  -- A one-second 16 kHz mono 16-bit WAV file (byte rate 32000).
+  local function fake_wav()
+    local path = vim.fn.tempname() .. ".wav"
+    local f = assert(io.open(path, "wb"))
+    local function u32(n)
+      return string.char(n % 256, math.floor(n / 256) % 256, math.floor(n / 65536) % 256, 0)
+    end
+    f:write("RIFF", u32(36 + 32000), "WAVEfmt ", u32(16), "\1\0\1\0", u32(16000), u32(32000))
+    f:write("\2\0\16\0", "data", u32(32000), string.rep("\0", 32000))
+    f:close()
+    return path
+  end
+
+  ow.setup({ history = { enabled = true, dir = dir } })
+  local wav = fake_wav()
+  eq("wav duration", history.wav_duration(wav), 1)
+  assert(history.add({ id = "A", raw = "into any of him", cleaned = "into any of them" }, wav))
+  assert(history.add({ id = "B", raw = "second", cleanup_error = "HTTP 401" }, fake_wav()))
+  eq("recording moved", vim.fn.filereadable(wav), 0)
+  eq("recording stored", vim.fn.filereadable(dir .. "/audio/A.wav"), 1)
+  local entries = history.read()
+  eq(
+    "entries",
+    vim.tbl_map(function(e)
+      return { e.id, e.audio, e.duration }
+    end, entries),
+    { { "A", "audio/A.wav", 1 }, { "B", "audio/B.wav", 1 } }
+  )
+
+  -- Review: correct A, delete B's block (left unreviewed), save.
+  ow.history()
+  local buf = vim.api.nvim_get_current_buf()
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  eq("review buffer entry", vim.list_slice(lines, 6, 9), {
+    "## A  1 s  -",
+    "raw:      into any of him",
+    "cleaned:  into any of them",
+    "verbatim: into any of him",
+  })
+  eq("cleanup error shown", lines[13], "cleaned:  (HTTP 401)")
+  vim.api.nvim_buf_set_lines(buf, 8, 9, false, { "verbatim: into Neovim" })
+  vim.api.nvim_buf_set_lines(buf, 9, -1, false, {})
+  vim.cmd("write")
+  eq("buffer saved", vim.bo[buf].modified, false)
+  entries = history.read()
+  eq("verbatim stored", { entries[1].verbatim, entries[2].verbatim }, { "into Neovim", nil })
+  vim.cmd("bwipeout!")
+  ow.history()
+  eq("only unreviewed shown", vim.api.nvim_buf_get_lines(0, 5, 6, false)[1], "## B  1 s  -")
+  vim.cmd("bwipeout!")
+
+  -- Invalid lines survive a rewrite.
+  local f = assert(io.open(history.file(), "a"))
+  f:write("not json\n")
+  f:close()
+  history.write(history.read())
+  eq("invalid line kept", vim.fn.readfile(history.file())[3], "not json")
+
+  -- Full flow with recording, transcription and cleanup stubbed out.
+  local recorder = require("openwhispr.recorder")
+  local on_exit
+  recorder.start = function(_, path, cb)
+    on_exit = cb
+    local src = fake_wav()
+    vim.uv.fs_rename(src, path)
+    return {
+      is_closing = function()
+        return true
+      end,
+    }
+  end
+  recorder.stop = function() end
+  require("openwhispr.transcribe").run = function(_, _, cb)
+    cb(nil, "edit this in neo vim", "openwhispr")
+  end
+  require("openwhispr.cleanup").run = function(_, _, _, _, cb)
+    cb(nil, "Edit this in Neovim.")
+  end
+  vim.cmd("enew!")
+  vim.bo.filetype = "markdown"
+  ow.start()
+  ow.stop()
+  on_exit({ code = 0, stderr = "" })
+  local last = history.read()[4]
+  eq("flow: entry", {
+    last.raw,
+    last.cleaned,
+    last.backend,
+    last.filetype,
+    last.duration,
+    vim.fn.filereadable(dir .. "/" .. last.audio),
+  }, { "edit this in neo vim", "Edit this in Neovim.", "openwhispr", "markdown", 1, 1 })
+  eq("flow: text inserted", vim.api.nvim_get_current_line(), "Edit this in Neovim.")
+
+  -- Disabled: nothing is recorded.
+  ow.setup({ history = { enabled = false, dir = dir } })
+  vim.cmd("enew!")
+  ow.start()
+  ow.stop()
+  on_exit({ code = 0, stderr = "" })
+  eq("disabled: no entry", #history.read(), 4)
+
+  ow.setup()
+  vim.notify = notify
+  vim.fn.delete(dir, "rf")
+end
+
 print(failures == 0 and "all passed" or (failures .. " failed"))
 os.exit(failures == 0 and 0 or 1)

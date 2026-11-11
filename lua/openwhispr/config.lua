@@ -79,6 +79,14 @@ M.defaults = {
   smart_spacing = true, -- add a space between inserted text and adjacent words
   wrap = true, -- wrap inserted lines longer than 'textwidth' (gw), following 'formatoptions'
   indicator = "inline", -- "inline" (at the insertion point), "eol", or false
+  history = {
+    -- Keep every recording with its raw and cleaned transcript, for
+    -- correcting misrecognitions (:OpenWhispr history).
+    enabled = false,
+    dir = nil, -- nil for stdpath("data") .. "/openwhispr"
+    audio = true, -- keep the recordings (WAV)
+    player = { "afplay" }, -- command to play a recording in the review buffer
+  },
 }
 
 ---@type openwhispr.Config
@@ -99,6 +107,9 @@ local function validate(opts)
   vim.validate("cleanup.keychain_service", opts.cleanup.keychain_service, "string")
   vim.validate("cleanup.api_key_cmd", opts.cleanup.api_key_cmd, "table", true)
   vim.validate("context.vocabulary", opts.context.vocabulary, "table")
+  vim.validate("history.enabled", opts.history.enabled, "boolean")
+  vim.validate("history.dir", opts.history.dir, "string", true)
+  vim.validate("history.player", opts.history.player, "table")
   if opts.indicator ~= false and opts.indicator ~= "inline" and opts.indicator ~= "eol" then
     error("openwhispr: indicator must be 'inline', 'eol', or false")
   end
@@ -112,6 +123,12 @@ function M.setup(opts)
   end
   if opts and opts.context and opts.context.vocabulary then
     merged.context.vocabulary = opts.context.vocabulary
+  end
+  if opts and opts.history and opts.history.player then
+    merged.history.player = opts.history.player
+  end
+  if merged.history.dir then
+    merged.history.dir = vim.fs.normalize(merged.history.dir)
   end
   validate(merged)
   M.options = merged

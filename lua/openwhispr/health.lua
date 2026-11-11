@@ -54,6 +54,24 @@ function M.check()
     end
   end
 
+  h.start("openwhispr: history")
+  if opts.history.enabled then
+    local history = require("openwhispr.history")
+    h.ok(
+      ("enabled: %s (%d entries)%s"):format(
+        history.file(),
+        #history.read(),
+        opts.history.audio and ", with recordings" or ""
+      )
+    )
+    local player = opts.history.player[1]
+    if opts.history.audio and vim.fn.executable(player) ~= 1 then
+      h.warn(player .. " not found; recordings cannot be played (history.player)")
+    end
+  else
+    h.info("disabled (history.enabled = false)")
+  end
+
   h.start("openwhispr: cleanup")
   if not opts.cleanup.enabled then
     h.info("cleanup disabled; raw transcripts are inserted")
