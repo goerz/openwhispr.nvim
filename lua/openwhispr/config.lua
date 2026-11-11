@@ -12,7 +12,7 @@ local MARKDOWN = "GitHub-flavored Markdown. The output must be valid Markdown: "
 M.defaults = {
   recording = {
     -- ffmpeg command line without the output file (the plugin appends `-t
-    -- <max_duration>` and the file). The default records the first macOS
+    -- <max_duration>` and the file). The default records the macOS default
     -- audio input device as 16 kHz mono.
     cmd = {
       "ffmpeg",
@@ -22,7 +22,7 @@ M.defaults = {
       "-f",
       "avfoundation",
       "-i",
-      ":0",
+      ":default",
       "-ar",
       "16000",
       "-ac",

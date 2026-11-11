@@ -35,6 +35,37 @@ The key is passed to `curl` on standard input, so it does not appear in the proc
 
 `ffmpeg` runs as a child process of Neovim, so macOS asks whether your terminal application may use the microphone the first time you dictate. If the permission is denied, recordings are silent and you get "no speech detected"; grant it in System Settings under Privacy & Security > Microphone.
 
+### Choosing the microphone
+
+Recording uses the macOS default input device, the one selected in System Settings > Sound > Input. To record from a specific microphone regardless of that setting, list the device names:
+
+```sh
+ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 | sed -n '/audio devices/,/Error/p'
+```
+
+The output looks like this (the final "Error opening input" line is expected, since no input was given):
+
+```
+[AVFoundation indev @ 0x...] AVFoundation audio devices:
+[AVFoundation indev @ 0x...] [0] Studio Display Microphone
+[AVFoundation indev @ 0x...] [1] Yeti Stereo Microphone
+[AVFoundation indev @ 0x...] [2] MacBook Pro Microphone
+[in#0 @ 0x...] Error opening input: Input/output error
+```
+
+Then replace `":default"` in `recording.cmd` with a colon followed by the name:
+
+```lua
+opts = {
+  recording = {
+    cmd = { "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation",
+            "-i", ":Yeti Stereo Microphone", "-ar", "16000", "-ac", "1", "-y" },
+  },
+}
+```
+
+The index (`":1"`) works too, but indices change when devices are plugged in or removed.
+
 ## Installation
 
 With [lazy.nvim](https://github.com/folke/lazy.nvim):
@@ -51,6 +82,8 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim):
 ```
 
 Calling `setup()` is optional; the defaults apply without it.
+
+With lazy-loading, `:checkhealth openwhispr` reports "No healthcheck found" until the plugin has loaded. Run `:Lazy load openwhispr.nvim` first, or dictate once.
 
 ## Usage
 
@@ -100,7 +133,7 @@ require("openwhispr").setup({
   recording = {
     -- ffmpeg command without the output file
     cmd = { "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation",
-            "-i", ":0", "-ar", "16000", "-ac", "1", "-y" },
+            "-i", ":default", "-ar", "16000", "-ac", "1", "-y" },
     max_duration = 600, -- seconds
     keep_audio = false,
   },
@@ -137,7 +170,7 @@ require("openwhispr").setup({
 })
 ```
 
-`filetype_hints` maps a filetype to a description of the file for the model; your entries are merged with the defaults. The defaults cover `markdown` (also `quarto`, `rmd`, `pandoc`), `tex`, `plaintex`, `julia`, `python`, `gitcommit`, `mail`, and `text`. The Markdown hint asks for valid GitHub-flavored Markdown, with code in backticks and math as `$...$` / `$$...$$`. It also applies wherever treesitter reports Markdown embedded at the cursor, for example in a docstring. To pick the audio input, list the devices with `ffmpeg -f avfoundation -list_devices true -i ""` and replace `":0"` in `recording.cmd`.
+`filetype_hints` maps a filetype to a description of the file for the model; your entries are merged with the defaults. The defaults cover `markdown` (also `quarto`, `rmd`, `pandoc`), `tex`, `plaintex`, `julia`, `python`, `gitcommit`, `mail`, and `text`. The Markdown hint asks for valid GitHub-flavored Markdown, with code in backticks and math as `$...$` / `$$...$$`. It also applies wherever treesitter reports Markdown embedded at the cursor, for example in a docstring.
 
 ## What the model sees
 

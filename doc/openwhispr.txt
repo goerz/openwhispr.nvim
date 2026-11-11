@@ -125,10 +125,13 @@ is optional. Tables are merged with the defaults, except lists
 
 recording.cmd                                  *openwhispr-recording.cmd*
     List. The ffmpeg command without the output file; the plugin appends
-    `-t {max_duration}` and a temporary WAV file. Default: record
-    AVFoundation device `:0` as 16 kHz mono. To find your device: >sh
+    `-t {max_duration}` and a temporary WAV file. Default: record the macOS
+    default input device (`:default`, as set in System Settings > Sound) as
+    16 kHz mono. To use a specific microphone, replace `:default` with
+    `:{name}` or `:{index}` from: >sh
         ffmpeg -f avfoundation -list_devices true -i ""
-<    Recording stops by sending `q` to ffmpeg's standard input.
+<    Names are safer than indices, which change when devices come and go.
+    Recording stops by sending `q` to ffmpeg's standard input.
 
 recording.max_duration                  *openwhispr-recording.max_duration*
     Number of seconds after which recording stops by itself. Default: 600.
