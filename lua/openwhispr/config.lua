@@ -31,6 +31,9 @@ M.defaults = {
     },
     max_duration = 600, -- seconds; recording stops automatically after this
     keep_audio = false, -- keep the WAV file after processing (for debugging)
+    -- Buffer-local keys (normal and insert mode) that exist only while
+    -- recording; false disables one or both.
+    keys = { stop = "<Esc>", cancel = "<C-c>" },
   },
   transcription = {
     openwhispr = "openwhispr", -- OpenWhispr CLI executable; false to skip
@@ -84,6 +87,11 @@ M.options = vim.deepcopy(M.defaults)
 local function validate(opts)
   vim.validate("recording.cmd", opts.recording.cmd, "table")
   vim.validate("recording.max_duration", opts.recording.max_duration, "number", true)
+  vim.validate("recording.keys", opts.recording.keys, { "table", "boolean" })
+  if type(opts.recording.keys) == "table" then
+    vim.validate("recording.keys.stop", opts.recording.keys.stop, { "string", "boolean" }, true)
+    vim.validate("recording.keys.cancel", opts.recording.keys.cancel, { "string", "boolean" }, true)
+  end
   vim.validate("transcription.openwhispr", opts.transcription.openwhispr, { "string", "boolean" })
   vim.validate("transcription.parakeet", opts.transcription.parakeet, { "string", "boolean" })
   vim.validate("cleanup.enabled", opts.cleanup.enabled, "boolean")

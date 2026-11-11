@@ -95,6 +95,8 @@ vim.keymap.set({ "n", "i", "x" }, "<C-x><C-v>", "<Plug>(openwhispr-toggle)")
 
 Dictation is a toggle (start, then stop), because terminal Neovim receives no key-release events, which rules out hold-to-talk.
 
+While recording, two more keys work in the buffer you are dictating into, in normal and insert mode: `<Esc>` stops the recording and inserts the text, and `<C-c>` cancels it. In insert mode, `<Esc>` only ends the dictation; press it again to leave insert mode. These keys exist only during the recording; change or disable them with `recording.keys`.
+
 - Insert mode: the text goes in at the cursor.
 - Normal mode: the text goes in after the character under the cursor.
 - Visual mode (charwise or linewise): the text replaces the selection.
@@ -136,6 +138,7 @@ require("openwhispr").setup({
             "-i", ":default", "-ar", "16000", "-ac", "1", "-y" },
     max_duration = 600, -- seconds
     keep_audio = false,
+    keys = { stop = "<Esc>", cancel = "<C-c>" }, -- only while recording; false to disable
   },
   transcription = {
     openwhispr = "openwhispr", -- CLI executable; false to skip

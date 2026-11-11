@@ -66,6 +66,12 @@ The plugin defines no keys. Map |<Plug>(openwhispr-toggle)|, for example: >lua
 Press the key to start recording and again to stop. (Terminal Neovim gets
 no key-release events, so hold-to-talk is not possible.)
 
+While recording, <Esc> stops the recording and <C-c> cancels it, in normal
+and insert mode, in the buffer being dictated into. In insert mode, <Esc>
+only ends the dictation; press it again to leave insert mode. These keys
+are mapped only for the duration of the recording (see
+|openwhispr-recording.keys|).
+
 Where the text goes depends on the mode in which dictation starts:
 
 - Insert mode: at the cursor.
@@ -138,6 +144,13 @@ recording.max_duration                  *openwhispr-recording.max_duration*
 
 recording.keep_audio                      *openwhispr-recording.keep_audio*
     Keep the temporary WAV file. Default: false.
+
+recording.keys                                  *openwhispr-recording.keys*
+    Table with the keys `stop` and `cancel`: buffer-local mappings in
+    normal and insert mode that exist only while recording. Buffer-local
+    mappings they shadow are restored afterwards. Set a key to false to
+    skip it, or `keys = false` for neither.
+    Default: `{ stop = "<Esc>", cancel = "<C-c>" }`.
 
 transcription.openwhispr                *openwhispr-transcription.openwhispr*
     The OpenWhispr CLI executable, or false to skip OpenWhispr.

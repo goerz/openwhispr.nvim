@@ -110,11 +110,70 @@ local function update(s, state)
   emit()
 end
 
+local KEY_MODES = { "n", "i" }
+
+---Map the stop and cancel keys in the session's buffer for the duration of
+---the recording, saving any buffer-local mappings they shadow.
+local function map_keys(s)
+  local keys = config.options.recording.keys
+  if not keys then
+    return
+  end
+  s.keymaps = {}
+  local actions = {
+    {
+      keys.stop,
+      function()
+        M.stop()
+      end,
+      "Stop dictation",
+    },
+    {
+      keys.cancel,
+      function()
+        M.cancel()
+      end,
+      "Cancel dictation",
+    },
+  }
+  for _, a in ipairs(actions) do
+    local lhs, fn, desc = a[1], a[2], a[3]
+    if lhs then
+      for _, mode in ipairs(KEY_MODES) do
+        local prev = vim.fn.maparg(lhs, mode, false, true)
+        if prev.buffer ~= 1 then
+          prev = nil
+        end
+        vim.keymap.set(mode, lhs, fn, { buf = s.buf, nowait = true, desc = desc })
+        table.insert(s.keymaps, { mode = mode, lhs = lhs, prev = prev })
+      end
+    end
+  end
+end
+
+---Remove the keys set by map_keys() and restore what they shadowed.
+local function unmap_keys(s)
+  local maps = s.keymaps
+  s.keymaps = nil
+  if not maps or not api.nvim_buf_is_valid(s.buf) then
+    return
+  end
+  api.nvim_buf_call(s.buf, function()
+    for _, m in ipairs(maps) do
+      pcall(vim.keymap.del, m.mode, m.lhs, { buf = s.buf })
+      if m.prev then
+        pcall(vim.fn.mapset, m.mode, false, m.prev)
+      end
+    end
+  end)
+end
+
 local function finish(s)
   if s.finished then
     return
   end
   s.finished = true
+  unmap_keys(s)
   if s.timer then
     s.timer:stop()
     s.timer:close()
@@ -230,6 +289,7 @@ local function on_record_exit(s, res)
   if recording == s then
     -- ffmpeg ended without a stop request: duration limit or failure.
     recording = nil
+    unmap_keys(s)
     if res.code ~= 0 then
       notify(("recording failed (exit %d): %s"):format(res.code, stderr), levels.ERROR)
       return finish(s)
@@ -354,6 +414,7 @@ function M.start(range)
   s.proc = proc
   sessions[s.id] = s
   recording = s
+  map_keys(s)
 
   -- Tick the elapsed-time display once a second.
   s.timer = vim.uv.new_timer()
@@ -384,6 +445,7 @@ function M.stop()
     return notify("not recording", levels.WARN)
   end
   recording = nil
+  unmap_keys(s)
   update(s, "stopping")
   recorder.stop(s.proc)
 end
@@ -404,6 +466,7 @@ function M.cancel()
   for _, s in pairs(sessions) do
     any = true
     s.cancelled = true
+    unmap_keys(s)
     if s.proc and not s.proc:is_closing() then
       recorder.kill(s.proc)
     end

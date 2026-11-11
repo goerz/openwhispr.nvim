@@ -159,5 +159,62 @@ eq(
   { "x = aaaa bbbb cccc dddd eeee ffff gggg" }
 )
 
+-- Stop and cancel keys while recording (recorder stubbed out).
+do
+  local recorder = require("openwhispr.recorder")
+  local calls = {}
+  recorder.start = function()
+    local proc = { closed = false }
+    function proc:is_closing()
+      return self.closed
+    end
+    return proc
+  end
+  recorder.stop = function()
+    table.insert(calls, "stop")
+  end
+  recorder.kill = function(proc)
+    proc.closed = true
+    table.insert(calls, "kill")
+  end
+  require("openwhispr.transcribe").dictionary = function() end
+  local notify = vim.notify
+  vim.notify = function() end
+  local ow = require("openwhispr")
+  local function feed(keys)
+    vim.api.nvim_feedkeys(vim.keycode(keys), "x", false)
+  end
+  vim.keymap.set({ "n", "i" }, "<F5>", ow.toggle)
+  local recording = {}
+  vim.keymap.set("i", "<F6>", function()
+    table.insert(recording, ow.is_recording())
+  end)
+
+  vim.cmd("enew!")
+  vim.keymap.set("i", "<C-c>", "OLD", { buffer = true })
+  feed("i<F5><F6><Esc><F6>abc<Esc>")
+  eq("Esc stops in insert mode", { recording, calls }, { { true, false }, { "stop" } })
+  eq("insert mode kept after Esc", vim.api.nvim_get_current_line(), "abc")
+  eq("Esc unmapped after stop", vim.fn.maparg("<Esc>", "i"), "")
+  eq("shadowed buffer-local map restored", vim.fn.maparg("<C-c>", "i"), "OLD")
+  ow.cancel()
+
+  vim.cmd("enew!")
+  calls = {}
+  feed("<F5><C-c>")
+  eq("C-c cancels in normal mode", { ow.is_recording(), calls }, { false, { "kill" } })
+
+  ow.setup({ recording = { keys = { cancel = false } } })
+  feed("<F5>")
+  eq(
+    "cancel = false",
+    { vim.fn.maparg("<Esc>", "n") ~= "", vim.fn.maparg("<C-c>", "n") },
+    { true, "" }
+  )
+  ow.cancel()
+  ow.setup()
+  vim.notify = notify
+end
+
 print(failures == 0 and "all passed" or (failures .. " failed"))
 os.exit(failures == 0 and 0 or 1)
