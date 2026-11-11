@@ -1,0 +1,252 @@
+*openwhispr.txt*  Dictation with local transcription and Claude cleanup
+
+==============================================================================
+CONTENTS                                                  *openwhispr-contents*
+
+  1. Introduction ........................... |openwhispr-introduction|
+  2. Requirements ........................... |openwhispr-requirements|
+  3. Usage .................................. |openwhispr-usage|
+  4. Commands and mappings .................. |openwhispr-commands|
+  5. Configuration .......................... |openwhispr-configuration|
+  6. Lua API ................................ |openwhispr-api|
+  7. Privacy ................................ |openwhispr-privacy|
+
+==============================================================================
+1. INTRODUCTION                                       *openwhispr-introduction*
+
+openwhispr.nvim inserts dictated text into the current buffer:
+
+1. `ffmpeg` records the microphone.
+2. The OpenWhispr desktop app transcribes the recording locally, through
+   its CLI (`openwhispr --local transcribe`). If the app is not reachable,
+   `parakeet-mlx` transcribes it instead.
+3. Claude (Haiku, by default) cleans up the transcript through the
+   Anthropic Messages API. It removes filler words, applies spoken
+   self-corrections, fixes punctuation and misheard technical terms, and
+   formats the text for the file type, using the lines around the cursor
+   as context.
+4. The result is inserted at the position where dictation started, or
+   replaces the visual selection.
+
+From stopping the recording to text in the buffer typically takes 1 to 2
+seconds.
+
+==============================================================================
+2. REQUIREMENTS                                       *openwhispr-requirements*
+
+- Neovim 0.11 or later.
+- `ffmpeg`. The default recording command uses AVFoundation (macOS); see
+  `recording.cmd` for other systems.
+- The OpenWhispr desktop app (running) with its CLI, and/or `parakeet-mlx`.
+- `curl` and an Anthropic API key, for the cleanup step.
+
+The API key is read on every call from a macOS Keychain generic-password
+item with the service name `anthropic-api-key` (see
+`cleanup.keychain_service`). To create it: >sh
+
+    security add-generic-password -a "$USER" -s anthropic-api-key -w
+<
+The key reaches `curl` on standard input; it never appears in a process's
+arguments, in the environment, or in a file. `$ANTHROPIC_API_KEY` is not
+used. Set `cleanup.api_key_cmd` to obtain the key some other way.
+
+On macOS, the first recording triggers a prompt asking whether the terminal
+application may use the microphone. If access is denied, recordings are
+silent.
+
+Run |:checkhealth| `openwhispr` to check the setup.
+
+==============================================================================
+3. USAGE                                                     *openwhispr-usage*
+
+The plugin defines no keys. Map |<Plug>(openwhispr-toggle)|, for example: >lua
+
+    vim.keymap.set({ "n", "i", "x" }, "<C-x><C-v>", "<Plug>(openwhispr-toggle)")
+<
+Press the key to start recording and again to stop. (Terminal Neovim gets
+no key-release events, so hold-to-talk is not possible.)
+
+Where the text goes depends on the mode in which dictation starts:
+
+- Insert mode: at the cursor.
+- Normal mode: after the character under the cursor.
+- Visual mode, charwise or linewise: the text replaces the selection.
+  Blockwise selections are not supported.
+
+The insertion point is tracked with an extmark, so editing elsewhere during
+dictation is safe. An indicator at the insertion point shows the state
+(see `indicator`). If the cursor is still where dictation started when the
+text arrives, it moves to the end of the inserted text.
+
+Besides the transcript, the model sees the file name, filetype and its
+hint (|openwhispr-cleanup.filetype_hints|), the syntax at the insertion
+point, 'commentstring', the indentation of the current line and the indent
+unit, the surrounding text with the insertion point marked, the selection
+being replaced, and the vocabulary. The model does not wrap lines and does
+not write comment leaders; the plugin adds comment leaders to new lines
+inside a comment and wraps long lines (see |openwhispr-wrap|).
+
+If cleanup fails (no network, invalid key, exhausted credits, refusal), the
+raw transcript is inserted and a warning names the cause. If the buffer
+was closed in the meantime, the text goes to the unnamed register.
+
+==============================================================================
+4. COMMANDS AND MAPPINGS                                  *openwhispr-commands*
+
+                                                                 *:OpenWhispr*
+:[range]OpenWhispr [toggle]
+                        Start or stop dictation. With a [range] from a
+                        visual selection, the text replaces the selection;
+                        with another range, it replaces those lines.
+
+:OpenWhispr start       Start recording.
+
+:OpenWhispr stop        Stop recording and process the audio.
+
+:OpenWhispr cancel      Stop recording and discard all dictation in
+                        progress.
+
+                                                  *<Plug>(openwhispr-toggle)*
+                                                   *<Plug>(openwhispr-start)*
+                                                    *<Plug>(openwhispr-stop)*
+                                                  *<Plug>(openwhispr-cancel)*
+<Plug>(openwhispr-toggle), <Plug>(openwhispr-start),
+<Plug>(openwhispr-stop), <Plug>(openwhispr-cancel)
+                        Mappings for normal, insert, and visual mode. They
+                        do not leave insert mode.
+
+==============================================================================
+5. CONFIGURATION                                     *openwhispr-configuration*
+
+                                                          *openwhispr.setup()*
+Call `require("openwhispr").setup(opts)` to change the defaults. Calling it
+is optional. Tables are merged with the defaults, except lists
+(`recording.cmd`, `context.vocabulary`), which replace them.
+
+recording.cmd                                  *openwhispr-recording.cmd*
+    List. The ffmpeg command without the output file; the plugin appends
+    `-t {max_duration}` and a temporary WAV file. Default: record
+    AVFoundation device `:0` as 16 kHz mono. To find your device: >sh
+        ffmpeg -f avfoundation -list_devices true -i ""
+<    Recording stops by sending `q` to ffmpeg's standard input.
+
+recording.max_duration                  *openwhispr-recording.max_duration*
+    Number of seconds after which recording stops by itself. Default: 600.
+
+recording.keep_audio                      *openwhispr-recording.keep_audio*
+    Keep the temporary WAV file. Default: false.
+
+transcription.openwhispr                *openwhispr-transcription.openwhispr*
+    The OpenWhispr CLI executable, or false to skip OpenWhispr.
+    Default: "openwhispr".
+
+transcription.model                          *openwhispr-transcription.model*
+    A downloaded local OpenWhispr model id, passed as `--model`.
+    Default: nil (the app's model).
+
+transcription.parakeet                    *openwhispr-transcription.parakeet*
+    The parakeet-mlx executable, used when the OpenWhispr CLI is missing or
+    the app is not reachable (exit code 2). False disables the fallback.
+    Default: "parakeet-mlx".
+
+transcription.parakeet_model        *openwhispr-transcription.parakeet_model*
+    Hugging Face repository of the parakeet-mlx model. Default: nil.
+
+transcription.timeout                      *openwhispr-transcription.timeout*
+    Seconds. Default: 120.
+
+context.lines_before, context.lines_after     *openwhispr-context.lines*
+    Lines around the insertion point sent as context. Defaults: 40, 15.
+
+context.max_chars                              *openwhispr-context.max_chars*
+    Cap on the characters of surrounding text, half before and half after
+    the insertion point. Default: 6000.
+
+context.syntax                                    *openwhispr-context.syntax*
+    Tell the model whether the insertion point is in a comment, string,
+    math zone, and so on, from |treesitter| captures or legacy syntax
+    groups. Default: true.
+
+context.dictionary                            *openwhispr-context.dictionary*
+    Send the words in the OpenWhispr dictionary
+    (`openwhispr dictionary list`) as known vocabulary. Default: true.
+
+context.vocabulary                            *openwhispr-context.vocabulary*
+    List of additional known words or phrases. Default: {}.
+
+cleanup.enabled                                  *openwhispr-cleanup.enabled*
+    False inserts raw transcripts without calling the API. Default: true.
+
+cleanup.model                                      *openwhispr-cleanup.model*
+    Default: "claude-haiku-5-5".
+
+cleanup.effort                                    *openwhispr-cleanup.effort*
+    Value of `output_config.effort`. Default: "low".
+
+cleanup.thinking                                *openwhispr-cleanup.thinking*
+    "disabled" or "adaptive". Adaptive thinking roughly quadruples the
+    latency. Default: "disabled".
+
+cleanup.max_tokens                            *openwhispr-cleanup.max_tokens*
+    Default: 4096.
+
+cleanup.timeout                                  *openwhispr-cleanup.timeout*
+    Seconds for the API request. Default: 20.
+
+cleanup.keychain_service                *openwhispr-cleanup.keychain_service*
+    Service name of the Keychain item that holds the API key.
+    Default: "anthropic-api-key".
+
+cleanup.api_key_cmd                          *openwhispr-cleanup.api_key_cmd*
+    List: a command that prints the API key. Overrides
+    `keychain_service`. Default: nil.
+
+cleanup.instructions                        *openwhispr-cleanup.instructions*
+    String appended to the system prompt. Default: nil.
+
+cleanup.filetype_hints                    *openwhispr-cleanup.filetype_hints*
+    Table from filetype to a description of the file for the model.
+    Merged with the defaults: markdown, quarto, rmd, pandoc (all with the
+    same GitHub-flavored Markdown hint: inline code in backticks, math as
+    `$...$` and `$$...$$`), tex, plaintex, julia, python, gitcommit, mail,
+    text. A hint also applies when treesitter reports its language embedded
+    at the insertion point, such as Markdown in a docstring.
+
+smart_spacing                                      *openwhispr-smart_spacing*
+    Insert a space between the dictated text and an adjacent word or
+    sentence. Default: true.
+
+wrap                                                        *openwhispr-wrap*
+    Format inserted lines longer than 'textwidth' with |gw|, as if typed:
+    only with 'formatoptions' "t", or "c" inside a comment. Default: true.
+
+indicator                                              *openwhispr-indicator*
+    Where to show the state: "inline" (virtual text at the insertion point),
+    "eol" (end of line), or false. Highlight groups:
+    `OpenWhisprRecording`, `OpenWhisprProcessing`.
+
+==============================================================================
+6. LUA API                                                     *openwhispr-api*
+
+All functions are in `require("openwhispr")`.
+
+toggle()        Start or stop dictation.
+start()         Start dictation (uses the visual selection in visual mode).
+stop()          Stop recording and process the audio.
+cancel()        Discard all dictation in progress.
+is_recording()  Whether a recording is in progress.
+status()        Short state string for a statusline, `""` when idle.
+
+                                                         *OpenWhisprStatus*
+A |User| autocommand with the pattern `OpenWhisprStatus` fires on every
+state change; `data.status` holds the value of `status()`.
+
+==============================================================================
+7. PRIVACY                                                 *openwhispr-privacy*
+
+Audio is processed locally. The cleanup step sends the transcript, the file
+name and filetype, and the text around the insertion point (see
+|openwhispr-context.lines|) to the Anthropic API. Set `cleanup.enabled =
+false` to keep everything local.
+
+ vim:tw=78:ts=8:ft=help:norl:
