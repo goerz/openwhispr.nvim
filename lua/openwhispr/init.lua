@@ -283,6 +283,7 @@ local function process(s, transcript)
     notify("could not gather context: " .. tostring(ctx), levels.WARN)
     ctx = { filename = "", filetype = vim.bo[s.buf].filetype, before = "", after = "" }
   end
+  ctx.instructions = s.instructions
   cleanup.run(opts, ctx, transcript, vocabulary(s), function(err, text)
     if s.cancelled then
       return finish(s)
@@ -431,6 +432,9 @@ function M.start(range)
     time = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     history_id = history.new_id(),
     filetype = vim.bo[buf].filetype,
+    -- Read now, so that the trust prompt for a new project file comes
+    -- before the recording, not in the middle of it.
+    instructions = opts.cleanup.enabled and context.instructions(opts, buf) or nil,
   }
   local proc, err = recorder.start(opts, s.audio, function(res)
     on_record_exit(s, res)

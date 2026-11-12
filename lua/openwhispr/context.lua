@@ -110,6 +110,88 @@ function M.gather(opts, buf, srow, scol, erow, ecol)
   return ctx
 end
 
+-- Reads a project file, asking the user to trust it first (like 'exrc').
+-- Replaced in tests.
+M.read_trusted = vim.secure.read
+
+---Directories for temporary files. A buffer whose file is in one of them
+---(for example, a prompt that another program opened in Neovim for editing)
+---belongs to the project of the working directory.
+function M.temp_roots()
+  local roots = { "/tmp", "/private/tmp", "/var/folders", "/private/var/folders" }
+  if vim.env.TMPDIR and vim.env.TMPDIR ~= "" then
+    table.insert(roots, 1, vim.env.TMPDIR)
+  end
+  return roots
+end
+
+local function in_temp_dir(dir)
+  for _, root in ipairs(M.temp_roots()) do
+    root = vim.fs.normalize(root):gsub("/+$", "")
+    if root ~= "" and (dir == root or vim.startswith(dir, root .. "/")) then
+      return true
+    end
+  end
+  return false
+end
+
+---The directory where the search for project files starts: the directory
+---of the buffer's file, or the working directory for a buffer without a
+---file or with a file in a temporary directory.
+function M.project_dir(buf)
+  local file = vim.api.nvim_buf_get_name(buf)
+  local dir = file ~= "" and vim.fs.dirname(vim.fs.normalize(file)) or nil
+  if not dir or vim.fn.isdirectory(dir) == 0 or in_temp_dir(dir) then
+    return vim.fn.getcwd()
+  end
+  return dir
+end
+
+---Project files (`context.project_file`) that apply to `buf`: every file of
+---that name from the home directory down to M.project_dir(), outermost
+---first. Outside the home directory, the search goes up to the root.
+function M.project_files(opts, buf)
+  local name = opts.context.project_file
+  if not name then
+    return {}
+  end
+  local dir = M.project_dir(buf)
+  local home = vim.fs.normalize("~")
+  local found = vim.fs.find(name, {
+    upward = true,
+    path = dir,
+    type = "file",
+    limit = math.huge,
+    stop = vim.fs.dirname(home),
+  })
+  local files = {}
+  for i = #found, 1, -1 do
+    table.insert(files, found[i])
+  end
+  return files
+end
+
+---Instructions for the cleanup prompt, in order: `cleanup.instructions`,
+---the trusted project files (outermost first), and the buffer variable
+---`b:openwhispr_instructions`. Returns a list of {source, text}.
+function M.instructions(opts, buf)
+  local list = {}
+  local function add(source, text)
+    if type(text) == "string" and vim.trim(text) ~= "" then
+      table.insert(list, { source = source, text = vim.trim(text) })
+    end
+  end
+  add("cleanup.instructions", opts.cleanup.instructions)
+  for _, path in ipairs(M.project_files(opts, buf)) do
+    local ok, text = pcall(M.read_trusted, path)
+    if ok then
+      add(vim.fn.fnamemodify(path, ":~"), text)
+    end
+  end
+  add("b:openwhispr_instructions", vim.b[buf].openwhispr_instructions)
+  return list
+end
+
 ---Describe a run of leading whitespace, e.g. "4 spaces", "1 tab", "none".
 local function describe_whitespace(ws)
   if ws == "" then

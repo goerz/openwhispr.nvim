@@ -27,12 +27,31 @@ You clean up raw speech-to-text transcripts so they can be inserted into a file 
   context.CURSOR
 )
 
-local function system_prompt(opts)
-  local prompt = M.SYSTEM_PROMPT
-  if opts.cleanup.instructions then
-    prompt = prompt .. "\n\n" .. opts.cleanup.instructions
+---The system prompt, followed by the user's instructions for this file
+---(`ctx.instructions`, from context.instructions()).
+function M.system_prompt(opts, ctx)
+  local list = ctx.instructions
+  if not list then
+    list = {}
+    if opts.cleanup.instructions then
+      list[1] = { source = "cleanup.instructions", text = opts.cleanup.instructions }
+    end
   end
-  return prompt
+  if #list == 0 then
+    return M.SYSTEM_PROMPT
+  end
+  local parts = {}
+  for _, ins in ipairs(list) do
+    table.insert(
+      parts,
+      ('<instructions source="%s">\n%s\n</instructions>'):format(ins.source, ins.text)
+    )
+  end
+  return M.SYSTEM_PROMPT
+    .. "\n\nThe user's notes and conventions for this file and project follow, "
+    .. "from general to specific. Where they conflict with the rules above, "
+    .. "or a later one with an earlier one, follow the later one.\n\n"
+    .. table.concat(parts, "\n\n")
 end
 
 ---Build the user message from the context table and the raw transcript.
@@ -194,7 +213,7 @@ function M.request(opts, ctx, transcript, vocabulary, cb)
     max_tokens = opts.cleanup.max_tokens,
     thinking = { type = opts.cleanup.thinking },
     output_config = { effort = opts.cleanup.effort },
-    system = system_prompt(opts),
+    system = M.system_prompt(opts, ctx),
     messages = {
       { role = "user", content = M.user_message(opts, ctx, transcript, vocabulary) },
     },

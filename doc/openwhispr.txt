@@ -8,9 +8,10 @@ CONTENTS                                                  *openwhispr-contents*
   3. Usage .................................. |openwhispr-usage|
   4. Commands and mappings .................. |openwhispr-commands|
   5. Configuration .......................... |openwhispr-configuration|
-  6. Transcript history ..................... |openwhispr-history|
-  7. Lua API ................................ |openwhispr-api|
-  8. Privacy ................................ |openwhispr-privacy|
+  6. Project notes .......................... |openwhispr-project-notes|
+  7. Transcript history ..................... |openwhispr-history|
+  8. Lua API ................................ |openwhispr-api|
+  9. Privacy ................................ |openwhispr-privacy|
 
 ==============================================================================
 1. INTRODUCTION                                       *openwhispr-introduction*
@@ -196,6 +197,10 @@ context.dictionary                            *openwhispr-context.dictionary*
 context.vocabulary                            *openwhispr-context.vocabulary*
     List of additional known words or phrases. Default: {}.
 
+context.project_file                        *openwhispr-context.project_file*
+    Name of the project notes files (see |openwhispr-project-notes|), or
+    false to ignore them. Default: ".dictation.md".
+
 cleanup.enabled                                  *openwhispr-cleanup.enabled*
     False inserts raw transcripts without calling the API. Default: true.
 
@@ -224,7 +229,8 @@ cleanup.api_key_cmd                          *openwhispr-cleanup.api_key_cmd*
     `keychain_service`. Default: nil.
 
 cleanup.instructions                        *openwhispr-cleanup.instructions*
-    String appended to the system prompt. Default: nil.
+    Notes for every dictation, added to the system prompt before the
+    project notes (see |openwhispr-project-notes|). Default: nil.
 
 cleanup.filetype_hints                    *openwhispr-cleanup.filetype_hints*
     Table from filetype to a description of the file for the model.
@@ -262,7 +268,45 @@ history.player                                    *openwhispr-history.player*
     Default: `{ "afplay" }`.
 
 ==============================================================================
-6. TRANSCRIPT HISTORY                                      *openwhispr-history*
+6. PROJECT NOTES                                     *openwhispr-project-notes*
+
+                                                    *openwhispr-.dictation.md*
+Notes about a project (notation, conventions, vocabulary) go in a file named
+`.dictation.md` (|openwhispr-context.project_file|) in or above the
+directory of the file you edit. The file is free text that the model reads
+as instructions, for example: >markdown
+
+    Physics papers. Write the Hamiltonian as \hat{H}.
+    Neovim is often transcribed as "any of him".
+<
+When dictation starts, the plugin collects every such file from the
+buffer's directory up to the home directory (up to the root for files
+outside it). The search starts in the working directory instead for a
+buffer without a file, or with a file in a temporary directory (`$TMPDIR`,
+`/tmp`, `/private/tmp`, `/var/folders`), such as the prompt file that
+Claude Code's CTRL-G opens: Neovim inherits that program's working
+directory. The model gets the instructions in this order, from general to
+specific, and follows the later one where two conflict:
+
+1. `cleanup.instructions`
+2. the project files, outermost first
+3. the buffer variable `b:openwhispr_instructions`
+
+                                                  *b:openwhispr_instructions*
+`b:openwhispr_instructions` is a string, for example set from an
+|autocommand| or an |ftplugin|.
+
+Project files are read with |vim.secure.read()|: the first time a file is
+used, and whenever it changes, Neovim asks whether to trust it ("exrc:
+Found untrusted code"). Choose (v)iew and run |:trust| to trust it. A file
+that is not trusted is ignored, including for the dictation that asked.
+To trust a new or edited file in advance: >vim
+    :trust path/to/.dictation.md
+<
+Keep the notes short; they are sent with every dictation.
+
+==============================================================================
+7. TRANSCRIPT HISTORY                                      *openwhispr-history*
 
 With `history.enabled`, every dictation is saved: the recording, the raw
 transcript from the speech recognizer, the cleaned text (or the cleanup
@@ -293,7 +337,7 @@ line marks a recording as unusable. `:OpenWhispr history all` lists the
 reviewed entries too.
 
 ==============================================================================
-7. LUA API                                                     *openwhispr-api*
+8. LUA API                                                     *openwhispr-api*
 
 All functions are in `require("openwhispr")`.
 
@@ -310,12 +354,13 @@ A |User| autocommand with the pattern `OpenWhisprStatus` fires on every
 state change; `data.status` holds the value of `status()`.
 
 ==============================================================================
-8. PRIVACY                                                 *openwhispr-privacy*
+9. PRIVACY                                                 *openwhispr-privacy*
 
 Audio is processed locally and deleted after transcription, unless
 `history.enabled` keeps it. The cleanup step sends the transcript, the file
-name and filetype, and the text around the insertion point (see
-|openwhispr-context.lines|) to the Anthropic API. Set `cleanup.enabled =
-false` to keep everything local.
+name and filetype, the text around the insertion point (see
+|openwhispr-context.lines|), the vocabulary, and the instructions and
+project notes (|openwhispr-project-notes|) to the Anthropic API. Set
+`cleanup.enabled = false` to keep everything local.
 
  vim:tw=78:ts=8:ft=help:norl:

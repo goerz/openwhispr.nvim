@@ -331,5 +331,88 @@ do
   vim.fn.delete(dir, "rf")
 end
 
+-- Project files and instructions.
+do
+  local context = require("openwhispr.context")
+  local cleanup = require("openwhispr.cleanup")
+  local cfg = require("openwhispr.config")
+  local root = vim.fn.resolve(vim.fn.tempname())
+  vim.fn.mkdir(root .. "/a/b/c", "p")
+  vim.fn.writefile({ "Outer notes." }, root .. "/a/.dictation.md")
+  vim.fn.writefile({ "Inner notes." }, root .. "/a/b/.dictation.md")
+  vim.fn.writefile({ "Untrusted." }, root .. "/a/b/c/.dictation.md")
+  local buf = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(buf, root .. "/a/b/c/paper.tex")
+  -- The test tree is itself in a temporary directory.
+  local temp_roots = context.temp_roots
+  context.temp_roots = function()
+    return { root .. "/tmp" }
+  end
+  vim.fn.mkdir(root .. "/tmp/claude", "p")
+  local prompt_buf = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_buf_set_name(prompt_buf, root .. "/tmp/claude/prompt.md")
+  local cwd = vim.fn.getcwd()
+  vim.fn.chdir(root .. "/a/b")
+  eq("file in temp dir uses cwd", context.project_dir(prompt_buf), root .. "/a/b")
+  eq("file elsewhere uses its directory", context.project_dir(buf), root .. "/a/b/c")
+  vim.fn.chdir(cwd)
+  vim.api.nvim_buf_delete(prompt_buf, { force = true })
+
+  cfg.setup({ cleanup = { instructions = "Global." } })
+  eq("project files, outermost first", context.project_files(cfg.options, buf), {
+    root .. "/a/.dictation.md",
+    root .. "/a/b/.dictation.md",
+    root .. "/a/b/c/.dictation.md",
+  })
+  local read_trusted = context.read_trusted
+  context.read_trusted = function(path)
+    if path:find("/c/", 1, true) then
+      return nil -- not trusted
+    end
+    return table.concat(vim.fn.readfile(path), "\n")
+  end
+  vim.b[buf].openwhispr_instructions = "Buffer."
+  local list = context.instructions(cfg.options, buf)
+  eq(
+    "instruction order",
+    vim.tbl_map(function(i)
+      return i.text
+    end, list),
+    { "Global.", "Outer notes.", "Inner notes.", "Buffer." }
+  )
+  eq("instruction source", list[2].source, vim.fn.fnamemodify(root .. "/a/.dictation.md", ":~"))
+
+  local prompt = cleanup.system_prompt(cfg.options, { instructions = list })
+  eq("system prompt starts unchanged", vim.startswith(prompt, cleanup.SYSTEM_PROMPT), true)
+  eq(
+    "system prompt instructions",
+    prompt
+      :sub(#cleanup.SYSTEM_PROMPT + 1)
+      :match('<instructions source="b:openwhispr_instructions">\nBuffer.\n</instructions>$')
+      ~= nil,
+    true
+  )
+  eq(
+    "no instructions",
+    cleanup.system_prompt(cfg.options, { instructions = {} }),
+    cleanup.SYSTEM_PROMPT
+  )
+  eq(
+    "fallback to cleanup.instructions",
+    cleanup.system_prompt(cfg.options, {}):match("Global%.\n</instructions>$") ~= nil,
+    true
+  )
+
+  cfg.setup({ context = { project_file = false } })
+  eq("project_file = false", context.project_files(cfg.options, buf), {})
+  eq("only the buffer variable", #context.instructions(cfg.options, buf), 1)
+
+  context.read_trusted = read_trusted
+  context.temp_roots = temp_roots
+  cfg.setup()
+  vim.api.nvim_buf_delete(buf, { force = true })
+  vim.fn.delete(root, "rf")
+end
+
 print(failures == 0 and "all passed" or (failures .. " failed"))
 os.exit(failures == 0 and 0 or 1)
