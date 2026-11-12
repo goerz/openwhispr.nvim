@@ -403,6 +403,16 @@ do
     true
   )
 
+  eq("no warning for short notes", context.instructions_warning(cfg.options, list), nil)
+  local long = { { source = "~/p/.dictation.md", text = string.rep("x", 12000) }, list[1] }
+  eq(
+    "warning for long notes",
+    context.instructions_warning(cfg.options, long),
+    "the instructions and project notes are long (12,007 characters), and they are sent with "
+      .. "every dictation: ~/p/.dictation.md (12,000), cleanup.instructions (7)"
+  )
+  cfg.setup({ context = { instructions_warn_chars = false } })
+  eq("warning disabled", context.instructions_warning(cfg.options, long), nil)
   cfg.setup({ context = { project_file = false } })
   eq("project_file = false", context.project_files(cfg.options, buf), {})
   eq("only the buffer variable", #context.instructions(cfg.options, buf), 1)

@@ -201,6 +201,12 @@ context.project_file                        *openwhispr-context.project_file*
     Name of the project notes files (see |openwhispr-project-notes|), or
     false to ignore them. Default: ".dictation.md".
 
+context.instructions_warn_chars
+                                 *openwhispr-context.instructions_warn_chars*
+    Warn (once per session) when the instructions and project notes
+    together are longer than this many characters; they are sent with
+    every dictation. False never warns. Default: 10000.
+
 cleanup.enabled                                  *openwhispr-cleanup.enabled*
     False inserts raw transcripts without calling the API. Default: true.
 
@@ -303,7 +309,8 @@ that is not trusted is ignored, including for the dictation that asked.
 To trust a new or edited file in advance: >vim
     :trust path/to/.dictation.md
 <
-Keep the notes short; they are sent with every dictation.
+Keep the notes short; they are sent with every dictation (see
+|openwhispr-context.instructions_warn_chars|).
 
 ==============================================================================
 7. TRANSCRIPT HISTORY                                      *openwhispr-history*

@@ -156,6 +156,7 @@ require("openwhispr").setup({
     dictionary = true, -- send the OpenWhispr dictionary as known vocabulary
     vocabulary = {}, -- extra known words, e.g. { "transmon", "Krotov" }
     project_file = ".dictation.md", -- project notes (see "Project notes"); false to disable
+    instructions_warn_chars = 10000, -- warn when instructions and notes are longer; false to never warn
   },
   cleanup = {
     enabled = true,
@@ -203,7 +204,7 @@ The model gets these instructions in order, from general to specific, and follow
 2. the `.dictation.md` files, outermost first
 3. `vim.b.openwhispr_instructions`, a buffer variable that you can set from an autocommand or an ftplugin
 
-Each project file is read through Neovim's trust mechanism (`:help vim.secure.read()`, the same one that guards `.nvim.lua`), so a `.dictation.md` in a cloned repository can't put text into your prompts without your consent. The first time a file is used, and again whenever it changes, Neovim shows "exrc: Found untrusted code" with the file name. In Neovim 0.12, choose (v)iew and run `:trust` in the window that opens; (i)gnore skips the file this time, and (d)eny skips it until it changes. The dictation that triggered the question goes ahead without the file. To avoid the question in the middle of dictating, trust a new or edited file beforehand with `:trust path/to/.dictation.md`. Keep the notes short: they are sent with every dictation.
+Each project file is read through Neovim's trust mechanism (`:help vim.secure.read()`, the same one that guards `.nvim.lua`), so a `.dictation.md` in a cloned repository can't put text into your prompts without your consent. The first time a file is used, and again whenever it changes, Neovim shows "exrc: Found untrusted code" with the file name. In Neovim 0.12, choose (v)iew and run `:trust` in the window that opens; (i)gnore skips the file this time, and (d)eny skips it until it changes. The dictation that triggered the question goes ahead without the file. To avoid the question in the middle of dictating, trust a new or edited file beforehand with `:trust path/to/.dictation.md`. Keep the notes short: they are sent with every dictation. Long notes work, but each dictation pays for them and the cleanup takes a little longer (in a test, 200,000 characters added about 0.5 s and cost about $0.006 per dictation). When the instructions and notes together exceed `context.instructions_warn_chars` (10,000 characters), the plugin warns once per session and names each file with its length.
 
 ## Transcript history
 

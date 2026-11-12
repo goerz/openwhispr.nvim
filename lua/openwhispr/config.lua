@@ -52,6 +52,10 @@ M.defaults = {
     -- Project notes for the cleanup prompt: every file of this name from the
     -- home directory down to the buffer's directory (false to disable).
     project_file = ".dictation.md",
+    -- Warn when the instructions and project notes together are longer than
+    -- this many characters (they are sent with every dictation); false to
+    -- never warn.
+    instructions_warn_chars = 10000,
   },
   cleanup = {
     enabled = true, -- false inserts the raw transcript
@@ -111,6 +115,11 @@ local function validate(opts)
   vim.validate("cleanup.api_key_cmd", opts.cleanup.api_key_cmd, "table", true)
   vim.validate("context.vocabulary", opts.context.vocabulary, "table")
   vim.validate("context.project_file", opts.context.project_file, { "string", "boolean" })
+  vim.validate(
+    "context.instructions_warn_chars",
+    opts.context.instructions_warn_chars,
+    { "number", "boolean" }
+  )
   vim.validate("cleanup.instructions", opts.cleanup.instructions, "string", true)
   vim.validate("history.enabled", opts.history.enabled, "boolean")
   vim.validate("history.dir", opts.history.dir, "string", true)

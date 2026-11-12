@@ -192,6 +192,39 @@ function M.instructions(opts, buf)
   return list
 end
 
+local function thousands(n)
+  local s = tostring(n)
+  while true do
+    local t, k = s:gsub("^(%d+)(%d%d%d)", "%1,%2")
+    s = t
+    if k == 0 then
+      return s
+    end
+  end
+end
+
+---A warning if the instructions (from M.instructions()) are longer than
+---`context.instructions_warn_chars` in total, or nil.
+function M.instructions_warning(opts, list)
+  local limit = opts.context.instructions_warn_chars
+  if not limit then
+    return nil
+  end
+  local total, parts = 0, {}
+  for _, ins in ipairs(list) do
+    local n = vim.fn.strchars(ins.text)
+    total = total + n
+    table.insert(parts, ("%s (%s)"):format(ins.source, thousands(n)))
+  end
+  if total <= limit then
+    return nil
+  end
+  return (
+    "the instructions and project notes are long (%s characters), and they are sent with "
+    .. "every dictation: %s"
+  ):format(thousands(total), table.concat(parts, ", "))
+end
+
 ---Describe a run of leading whitespace, e.g. "4 spaces", "1 tab", "none".
 local function describe_whitespace(ws)
   if ws == "" then

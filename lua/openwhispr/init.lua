@@ -21,6 +21,7 @@ local sessions = {} ---@type table<integer, table>
 local recording = nil ---@type table|nil  the session that is currently recording
 local next_id = 0
 local dictionary_cache = nil ---@type string[]|nil
+local warned = {} ---@type table<string, true>  warnings already shown
 
 local LABELS = {
   recording = "● rec",
@@ -436,6 +437,12 @@ function M.start(range)
     -- before the recording, not in the middle of it.
     instructions = opts.cleanup.enabled and context.instructions(opts, buf) or nil,
   }
+  -- Warn about long instructions once per session and message.
+  local warning = s.instructions and context.instructions_warning(opts, s.instructions)
+  if warning and not warned[warning] then
+    warned[warning] = true
+    notify(warning, levels.WARN)
+  end
   local proc, err = recorder.start(opts, s.audio, function(res)
     on_record_exit(s, res)
   end)
